@@ -60,13 +60,15 @@ June 2026
 ```
 .github/
 ├── ISSUE_TEMPLATE/
-│   └── repository-migration.yml   # Issue template for each migrating repo
+│   └── repository-migration.yml         # Issue template for each migrating repo
 └── workflows/
     ├── bootstrap-migration-dashboard.yml  # One-time project setup
+    ├── import-repos-csv.yml               # Bulk import repos from CSV
     └── migration-automation.yml           # Daily sync + status comments
 
 scripts/
 ├── create-labels.sh        # Creates all migration phase labels
+├── import-repos-csv.sh     # Creates issues from a CSV list of repositories
 ├── setup-project.sh        # Creates the GitHub Project + views + fields
 └── seed-sample-issues.sh   # Creates 20 sample migration issues (demo)
 
@@ -78,7 +80,55 @@ README.md
 
 ---
 
-## 🚀 Quick Start
+## 📥 Importing Repositories from CSV
+
+The fastest way to populate the dashboard is to import a CSV list of repositories.
+
+### CSV format
+
+```csv
+repo_name,team,scheduled_date,repo_size_mb,priority,type
+platform/auth-service,platform-engineering,2026-06-17,450,critical,app
+infra/terraform-modules,cloud-infrastructure,2026-06-17,95,critical,infra
+data/analytics-warehouse,data-platform,2026-06-18,520,high,app
+mobile/ios-app,mobile-engineering,2026-06-18,1200,high,app
+platform/legacy-monolith,core-platform,TBD,2100,critical,app
+```
+
+| Column | Required | Description |
+|--------|----------|-------------|
+| `repo_name` | ✅ | Full GHES path (e.g. `platform/auth-service`) |
+| `team` | ✅ | Owning team or contact |
+| `scheduled_date` | ✅ | `YYYY-MM-DD` or `TBD` |
+| `repo_size_mb` | — | Approximate size in MB |
+| `priority` | — | `critical` \| `high` \| `medium` \| `low` (default: `medium`) |
+| `type` | — | `app` \| `library` \| `infra` \| `docs` \| `archive` (default: `app`) |
+
+> Rows with `scheduled_date` set to a date get the **`scheduled`** label.
+> Rows with `TBD` get the **`preparation`** label.
+
+### Option A: Import via GitHub Actions (recommended)
+
+1. Go to **Actions → Import Repositories from CSV**.
+2. Click **Run workflow** and paste your CSV content into the **csv_content** field.
+3. Optionally provide your **Project number** (from the URL of your GitHub Project) to have issues added automatically.
+4. Click **Run workflow** — a tracking issue will be created for every repository row.
+
+### Option B: Import locally
+
+```bash
+# 1. Create your CSV file (e.g. repos.csv)
+# 2. Run the import script
+./scripts/import-repos-csv.sh repos.csv myorg/migration-tracking <project-number>
+
+# Override the GHES domain (default: ghes.example.com) and target GHEC org:
+GHES_DOMAIN=ghes.mycompany.com GHEC_ORG=myorg \
+  ./scripts/import-repos-csv.sh repos.csv myorg/migration-tracking <project-number>
+```
+
+---
+
+
 
 ### Prerequisites
 - `gh` CLI installed and authenticated (`gh auth login`)

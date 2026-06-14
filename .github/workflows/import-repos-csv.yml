@@ -1,0 +1,72 @@
+name: Import Repositories from CSV
+
+on:
+  workflow_dispatch:
+    inputs:
+      csv_content:
+        description: |
+          Paste CSV content (repo_name,team,scheduled_date,repo_size_mb,priority,type).
+          First line must be the header row.
+          Example:
+            repo_name,team,scheduled_date,repo_size_mb,priority,type
+            platform/auth-service,platform-engineering,2026-06-17,450,critical,app
+            infra/terraform-modules,cloud-infrastructure,2026-06-17,95,critical,infra
+        required: true
+        type: string
+      project_number:
+        description: "GitHub Project number to add issues to (leave blank to skip)"
+        required: false
+        type: string
+      ghec_org:
+        description: "Target GHEC org name (used to build GHEC repo URLs; defaults to this repo's owner)"
+        required: false
+        type: string
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  import-csv:
+    name: Import Repositories from CSV
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Make scripts executable
+        run: chmod +x scripts/*.sh
+
+      - name: Write CSV to file
+        run: |
+          cat > /tmp/repos.csv <<'__CSV__'
+          ${{ inputs.csv_content }}
+          __CSV__
+          # Remove leading whitespace from each line introduced by the heredoc indentation
+          sed -i 's/^[[:space:]]*//' /tmp/repos.csv
+          echo "CSV file contents:"
+          cat /tmp/repos.csv
+
+      - name: Import repositories from CSV
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GHEC_ORG: ${{ inputs.ghec_org || github.repository_owner }}
+          # Set GHES_DOMAIN to override the default 'ghes.example.com' in generated issue URLs
+          GHES_DOMAIN: ${{ vars.GHES_DOMAIN || 'ghes.example.com' }}
+        run: |
+          ./scripts/import-repos-csv.sh \
+            /tmp/repos.csv \
+            "${{ github.repository }}" \
+            "${{ inputs.project_number }}"
+
+      - name: Write job summary
+        run: |
+          echo "## 📥 CSV Import Complete" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Migration tracking issues have been created from the provided CSV." >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Next steps:**" >> "$GITHUB_STEP_SUMMARY"
+          echo "1. Open the GitHub Project and verify all issues appear on the board." >> "$GITHUB_STEP_SUMMARY"
+          echo "2. Set **Migration Status** and **Migration Date** project fields on each issue." >> "$GITHUB_STEP_SUMMARY"
+          echo "3. In the **Daily Dashboard** view, group by *Migration Date* to see per-wave boards." >> "$GITHUB_STEP_SUMMARY"
+          echo "4. In the **Monthly Dashboard** view, group by *Migration Month* for a rollup." >> "$GITHUB_STEP_SUMMARY"
