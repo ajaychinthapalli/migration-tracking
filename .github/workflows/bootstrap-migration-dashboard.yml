@@ -1,0 +1,116 @@
+name: Bootstrap Migration Dashboard
+
+on:
+  workflow_dispatch:
+    inputs:
+      owner_type:
+        description: "Is the project owner an org or user?"
+        required: true
+        default: "org"
+        type: choice
+        options:
+          - org
+          - user
+      seed_issues:
+        description: "Seed sample migration issues?"
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  # ──────────────────────────────────────────────────────────────────────────
+  # Job 1: Create labels
+  # ──────────────────────────────────────────────────────────────────────────
+  create-labels:
+    name: Create Migration Labels
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Make scripts executable
+        run: chmod +x scripts/*.sh
+
+      - name: Create labels
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: ./scripts/create-labels.sh "${{ github.repository }}"
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Job 2: Create the GitHub Project
+  # ──────────────────────────────────────────────────────────────────────────
+  create-project:
+    name: Create GitHub Project
+    runs-on: ubuntu-latest
+    needs: create-labels
+    outputs:
+      project_number: ${{ steps.create.outputs.project_number }}
+      project_url: ${{ steps.create.outputs.project_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Make scripts executable
+        run: chmod +x scripts/*.sh
+
+      - name: Create project
+        id: create
+        env:
+          GH_TOKEN: ${{ secrets.PROJECT_TOKEN || secrets.GITHUB_TOKEN }}
+        run: |
+          OWNER="${{ github.repository_owner }}"
+          OWNER_TYPE="${{ inputs.owner_type }}"
+          ./scripts/setup-project.sh "$OWNER" "$OWNER_TYPE"
+
+          if [[ -f /tmp/migration-project.env ]]; then
+            source /tmp/migration-project.env
+            echo "project_number=$PROJECT_NUMBER" >> "$GITHUB_OUTPUT"
+            echo "project_url=$PROJECT_URL"       >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Summary
+        run: |
+          echo "## 🚀 GitHub Migration Dashboard Created" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Item | Value |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|------|-------|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Project URL | ${{ steps.create.outputs.project_url }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Project Number | ${{ steps.create.outputs.project_number }} |" >> "$GITHUB_STEP_SUMMARY"
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Job 3 (conditional): Seed sample issues
+  # ──────────────────────────────────────────────────────────────────────────
+  seed-issues:
+    name: Seed Sample Issues
+    runs-on: ubuntu-latest
+    needs: create-project
+    if: ${{ inputs.seed_issues == true }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Make scripts executable
+        run: chmod +x scripts/*.sh
+
+      - name: Seed sample issues
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          ./scripts/seed-sample-issues.sh \
+            "${{ github.repository }}" \
+            "${{ needs.create-project.outputs.project_number }}"
+
+      - name: Summary
+        run: |
+          echo "## 📋 Sample Issues Seeded" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Sample migration issues have been created and added to the project." >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Next steps:**" >> "$GITHUB_STEP_SUMMARY"
+          echo "1. Open the project and set custom field values (Migration Date, Status) on each issue." >> "$GITHUB_STEP_SUMMARY"
+          echo "2. In **Daily Dashboard** view: group by *Migration Date*." >> "$GITHUB_STEP_SUMMARY"
+          echo "3. In **Monthly Dashboard** view: group by *Migration Month*." >> "$GITHUB_STEP_SUMMARY"
