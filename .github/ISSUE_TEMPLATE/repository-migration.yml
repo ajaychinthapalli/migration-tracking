@@ -1,0 +1,133 @@
+name: "Repository Migration"
+description: "Track the migration of a single repository from GHES to GHEC"
+title: "[MIGRATION] <repository-name>"
+labels: ["migration", "preparation"]
+assignees: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## Repository Migration Tracking
+        Use this template to track the migration of a single repository from **GitHub Enterprise Server (GHES)** to **GitHub Enterprise Cloud (GHEC)**.
+
+  - type: input
+    id: repo_name
+    attributes:
+      label: "Repository Name"
+      description: "Full name of the repository (org/repo-name)"
+      placeholder: "myorg/my-repository"
+    validations:
+      required: true
+
+  - type: input
+    id: repo_url_ghes
+    attributes:
+      label: "GHES Repository URL"
+      description: "URL of the repository on GitHub Enterprise Server"
+      placeholder: "https://ghes.example.com/org/repo"
+    validations:
+      required: true
+
+  - type: input
+    id: repo_url_ghec
+    attributes:
+      label: "GHEC Repository URL (post-migration)"
+      description: "Target URL of the repository on GitHub Enterprise Cloud"
+      placeholder: "https://github.com/org/repo"
+    validations:
+      required: false
+
+  - type: dropdown
+    id: migration_status
+    attributes:
+      label: "Migration Status"
+      description: "Current phase of this repository migration"
+      options:
+        - "Preparation"
+        - "Scheduled"
+        - "In Progress"
+        - "Complete"
+        - "Post Migration"
+        - "Validation"
+        - "Blocked"
+    validations:
+      required: true
+
+  - type: input
+    id: scheduled_date
+    attributes:
+      label: "Scheduled Migration Date"
+      description: "Planned date for migration (YYYY-MM-DD)"
+      placeholder: "2026-06-17"
+    validations:
+      required: true
+
+  - type: input
+    id: repo_size
+    attributes:
+      label: "Repository Size (MB)"
+      description: "Approximate repository size on disk"
+      placeholder: "250"
+    validations:
+      required: false
+
+  - type: input
+    id: team_owner
+    attributes:
+      label: "Owning Team / Contact"
+      description: "Team or person responsible for this repository"
+      placeholder: "team-platform / @username"
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: pre_migration_checklist
+    attributes:
+      label: "Pre-Migration Checklist"
+      description: "Complete all items before setting status to In Progress"
+      options:
+        - label: "Repository inventory confirmed"
+        - label: "Repo owner / stakeholders notified"
+        - label: "CI/CD pipelines identified and documented"
+        - label: "Secrets / environment variables inventoried"
+        - label: "Branch protection rules documented"
+        - label: "Webhooks and integrations documented"
+        - label: "Target GHEC org and visibility confirmed"
+        - label: "Migration trial run completed"
+
+  - type: checkboxes
+    id: post_migration_checklist
+    attributes:
+      label: "Post-Migration / Validation Checklist"
+      description: "Complete all items after migration to mark as Validated"
+      options:
+        - label: "Repository accessible on GHEC"
+        - label: "All branches migrated"
+        - label: "All PRs / issues migrated"
+        - label: "CI/CD pipelines updated and passing"
+        - label: "Secrets / environment variables configured in GHEC"
+        - label: "Branch protection rules re-applied"
+        - label: "Webhooks and integrations re-configured"
+        - label: "Team permissions set correctly"
+        - label: "GHES repository archived / redirected"
+
+  - type: textarea
+    id: blockers
+    attributes:
+      label: "Blockers / Notes"
+      description: "Any blockers, special requirements, or notes for this migration"
+      placeholder: "Describe any blockers or special considerations..."
+    validations:
+      required: false
+
+  - type: textarea
+    id: migration_log
+    attributes:
+      label: "Migration Log"
+      description: "Record key timestamps and actions taken during migration"
+      value: |
+        | Timestamp | Action | By |
+        |-----------|--------|----|
+        |           |        |    |
+    validations:
+      required: false

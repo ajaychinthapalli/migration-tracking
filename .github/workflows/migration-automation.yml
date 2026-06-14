@@ -1,0 +1,171 @@
+name: Migration Status Automation
+
+on:
+  issues:
+    types: [opened, edited, labeled, unlabeled, closed, reopened]
+  schedule:
+    # Runs at 06:00 UTC every day to generate the daily summary
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+    inputs:
+      generate_report:
+        description: "Generate migration status report?"
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  # ──────────────────────────────────────────────────────────────────────────
+  # Job 1: Sync issue label → project Status field
+  # Triggered when an issue is labeled / unlabeled
+  # ──────────────────────────────────────────────────────────────────────────
+  sync-status:
+    name: Sync Issue Label to Project Status
+    runs-on: ubuntu-latest
+    if: github.event_name == 'issues'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Determine migration status from labels
+        id: status
+        env:
+          LABELS: ${{ toJson(github.event.issue.labels.*.name) }}
+        run: |
+          STATUS=""
+          if echo "$LABELS" | grep -q '"validation"'; then
+            STATUS="Validation"
+          elif echo "$LABELS" | grep -q '"post-migration"'; then
+            STATUS="Post Migration"
+          elif echo "$LABELS" | grep -q '"complete"'; then
+            STATUS="Complete"
+          elif echo "$LABELS" | grep -q '"in-progress"'; then
+            STATUS="In Progress"
+          elif echo "$LABELS" | grep -q '"scheduled"'; then
+            STATUS="Scheduled"
+          elif echo "$LABELS" | grep -q '"blocked"'; then
+            STATUS="Blocked"
+          elif echo "$LABELS" | grep -q '"preparation"'; then
+            STATUS="Preparation"
+          fi
+          echo "status=$STATUS" >> "$GITHUB_OUTPUT"
+          echo "Detected status: $STATUS"
+
+      - name: Comment on status change
+        if: steps.status.outputs.status != '' && github.event.action == 'labeled'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const status = '${{ steps.status.outputs.status }}';
+            const label = context.payload.label.name;
+            const phaseEmoji = {
+              'Preparation':    '📋',
+              'Scheduled':      '📅',
+              'In Progress':    '🔄',
+              'Complete':       '✅',
+              'Post Migration': '🔍',
+              'Validation':     '🎯',
+              'Blocked':        '🚫',
+            };
+            const emoji = phaseEmoji[status] || '📌';
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: `${emoji} **Migration status updated to: ${status}**\n\n` +
+                    `Label \`${label}\` was applied by @${context.payload.sender.login}.`,
+            });
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Job 2: Daily migration status report
+  # Triggered by schedule or manual dispatch
+  # ──────────────────────────────────────────────────────────────────────────
+  daily-report:
+    name: Generate Daily Migration Report
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Fetch migration issues
+        id: issues
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "Fetching all open migration issues..."
+          gh issue list \
+            --repo "${{ github.repository }}" \
+            --label "migration" \
+            --state all \
+            --json number,title,labels,state,createdAt,updatedAt \
+            --limit 500 > /tmp/migration-issues.json
+
+          TOTAL=$(jq length /tmp/migration-issues.json)
+          PREPARATION=$(jq '[.[] | select(.labels[].name == "preparation")] | unique_by(.number) | length' /tmp/migration-issues.json)
+          SCHEDULED=$(jq '[.[] | select(.labels[].name == "scheduled")] | unique_by(.number) | length' /tmp/migration-issues.json)
+          IN_PROGRESS=$(jq '[.[] | select(.labels[].name == "in-progress")] | unique_by(.number) | length' /tmp/migration-issues.json)
+          COMPLETE=$(jq '[.[] | select(.labels[].name == "complete")] | unique_by(.number) | length' /tmp/migration-issues.json)
+          POST_MIGRATION=$(jq '[.[] | select(.labels[].name == "post-migration")] | unique_by(.number) | length' /tmp/migration-issues.json)
+          VALIDATION=$(jq '[.[] | select(.labels[].name == "validation")] | unique_by(.number) | length' /tmp/migration-issues.json)
+          BLOCKED=$(jq '[.[] | select(.labels[].name == "blocked")] | unique_by(.number) | length' /tmp/migration-issues.json)
+
+          echo "total=$TOTAL"             >> "$GITHUB_OUTPUT"
+          echo "preparation=$PREPARATION" >> "$GITHUB_OUTPUT"
+          echo "scheduled=$SCHEDULED"     >> "$GITHUB_OUTPUT"
+          echo "in_progress=$IN_PROGRESS" >> "$GITHUB_OUTPUT"
+          echo "complete=$COMPLETE"       >> "$GITHUB_OUTPUT"
+          echo "post_migration=$POST_MIGRATION" >> "$GITHUB_OUTPUT"
+          echo "validation=$VALIDATION"   >> "$GITHUB_OUTPUT"
+          echo "blocked=$BLOCKED"         >> "$GITHUB_OUTPUT"
+
+      - name: Write daily summary
+        run: |
+          TODAY=$(date -u +"%Y-%m-%d")
+          TOTAL=${{ steps.issues.outputs.total }}
+          COMPLETE=${{ steps.issues.outputs.complete }}
+          PCTG=0
+          [[ "$TOTAL" -gt 0 ]] && PCTG=$(( COMPLETE * 100 / TOTAL ))
+
+          cat >> "$GITHUB_STEP_SUMMARY" <<EOF
+          ## 📊 GitHub Migration Dashboard — Daily Report ($TODAY)
+
+          | Phase | Count |
+          |-------|------:|
+          | 📋 Preparation | ${{ steps.issues.outputs.preparation }} |
+          | 📅 Scheduled | ${{ steps.issues.outputs.scheduled }} |
+          | 🔄 In Progress | ${{ steps.issues.outputs.in_progress }} |
+          | ✅ Complete | ${{ steps.issues.outputs.complete }} |
+          | 🔍 Post Migration | ${{ steps.issues.outputs.post_migration }} |
+          | 🎯 Validation | ${{ steps.issues.outputs.validation }} |
+          | 🚫 Blocked | ${{ steps.issues.outputs.blocked }} |
+          | **Total** | **$TOTAL** |
+
+          **Overall Progress:** ${PCTG}% complete ($COMPLETE / $TOTAL repositories migrated)
+          EOF
+
+      - name: Create daily tracking issue (if blocked repos exist)
+        if: steps.issues.outputs.blocked > 0
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const today = new Date().toISOString().split('T')[0];
+            const blocked = ${{ steps.issues.outputs.blocked }};
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `[DAILY ALERT] ${blocked} migration(s) blocked — ${today}`,
+              body: `## 🚫 Blocked Migrations Alert\n\n` +
+                    `**Date:** ${today}\n\n` +
+                    `There are currently **${blocked}** repositories with a \`blocked\` status.\n\n` +
+                    `Please review and resolve blockers as soon as possible to keep the migration on schedule.\n\n` +
+                    `### Action Required\n` +
+                    `- [ ] Review all issues labeled [\`blocked\`](/${context.repo.owner}/${context.repo.repo}/issues?q=label%3Ablocked)\n` +
+                    `- [ ] Assign owners to resolve each blocker\n` +
+                    `- [ ] Update status once unblocked\n`,
+              labels: ['migration', 'blocked'],
+            });
