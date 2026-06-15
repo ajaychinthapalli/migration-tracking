@@ -1,0 +1,668 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Migration command center</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<style>
+  :root{
+    --bg:#F2F4F7; --surface:#FFFFFF; --border:#E1E5EB;
+    --text:#1B2430; --text-muted:#6B7480; --text-faint:#9AA3B0;
+    --brand:#1E2A38; --brand-light:#33455A; --accent:#E0A458;
+
+    --c-preparation:#64748B; --c-inprogress:#D97706; --c-complete:#15803D;
+    --c-postmigration:#2563EB; --c-validation:#7C3AED;
+
+    --h-ontrack:#15803D; --h-atrisk:#D97706; --h-blocked:#DC2626; --h-done:#64748B;
+
+    --r-scheduled:#64748B; --r-inprogress:#D97706; --r-complete:#15803D;
+  }
+
+  *{box-sizing:border-box;}
+  html,body{margin:0;}
+  body{
+    font-family:'Inter',system-ui,sans-serif;
+    background:var(--bg); color:var(--text);
+    line-height:1.5; font-size:14px;
+  }
+  h1,h2,h3,h4{font-family:'Space Grotesk',sans-serif; font-weight:700; margin:0;}
+  code, .mono{font-family:'IBM Plex Mono','Inter',monospace;}
+
+  /* ---- Top bar ---- */
+  .topbar{
+    background:var(--brand); color:#fff;
+    display:flex; align-items:center; justify-content:space-between;
+    flex-wrap:wrap; gap:16px;
+    padding:18px 28px;
+  }
+  .brand{display:flex; align-items:center; gap:14px;}
+  .brand-mark{
+    background:var(--accent); color:var(--brand);
+    font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:13px;
+    padding:8px 10px; border-radius:8px; letter-spacing:0.04em;
+  }
+  .brand h1{font-size:20px; color:#fff;}
+  .brand .subtitle{margin:2px 0 0; font-size:13px; color:#C9D2DD;}
+  .actions{display:flex; gap:10px; flex-wrap:wrap;}
+
+  .btn{
+    font-family:'Inter',sans-serif; font-size:13px; font-weight:600;
+    border-radius:8px; padding:10px 16px; cursor:pointer;
+    border:1px solid transparent; transition:filter .15s ease;
+    display:inline-flex; align-items:center; gap:6px;
+  }
+  .btn:hover{filter:brightness(1.08);}
+  .btn:focus-visible{outline:2px solid var(--accent); outline-offset:2px;}
+  .btn-primary{background:var(--accent); color:var(--brand);}
+  .btn-ghost{background:transparent; color:#fff; border-color:rgba(255,255,255,0.35);}
+
+  /* ---- Status / overall bar ---- */
+  .status-bar{
+    padding:10px 28px; font-size:13px; color:var(--text-muted);
+    background:var(--surface); border-bottom:1px solid var(--border);
+  }
+  .status-bar a{color:var(--brand-light); cursor:pointer; text-decoration:underline;}
+
+  .overall{
+    padding:18px 28px; background:var(--surface); border-bottom:1px solid var(--border);
+  }
+  .overall-label{font-size:13px; font-weight:600; color:var(--text-muted); margin-bottom:10px;}
+  .overall-label .mono{color:var(--text);}
+
+  /* ---- Tabs ---- */
+  .tabs{
+    display:flex; gap:4px; padding:0 28px; background:var(--surface);
+    border-bottom:1px solid var(--border);
+  }
+  .tab{
+    font-family:'Inter',sans-serif; font-size:14px; font-weight:600;
+    background:none; border:none; cursor:pointer; color:var(--text-muted);
+    padding:14px 6px; margin-right:24px; border-bottom:3px solid transparent;
+  }
+  .tab.active{color:var(--brand); border-bottom-color:var(--accent);}
+  .tab:focus-visible{outline:2px solid var(--accent); outline-offset:2px;}
+
+  main{padding:24px 28px 48px; max-width:1200px; margin:0 auto;}
+  .tab-panel{display:none;}
+  .tab-panel.active{display:block;}
+
+  /* ---- Panel controls ---- */
+  .panel-controls{
+    display:flex; align-items:center; gap:14px; margin-bottom:18px; flex-wrap:wrap;
+  }
+  .panel-controls label{font-size:13px; font-weight:600; color:var(--text-muted);}
+  select{
+    font-family:'IBM Plex Mono',monospace; font-size:13px;
+    padding:8px 12px; border-radius:8px; border:1px solid var(--border);
+    background:var(--surface); color:var(--text);
+  }
+  select:focus-visible{outline:2px solid var(--accent); outline-offset:1px;}
+  .repo-count{
+    font-family:'IBM Plex Mono',monospace; font-size:13px; color:var(--text-muted);
+    margin-left:auto;
+  }
+
+  /* ---- Pipeline bar ---- */
+  .pipeline{
+    display:flex; height:54px; border-radius:10px; overflow:hidden;
+    border:1px solid var(--border); margin-bottom:20px; background:var(--surface);
+  }
+  .pipeline-segment{
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    color:#fff; min-width:64px; padding:0 6px; text-align:center;
+  }
+  .seg-count{font-family:'IBM Plex Mono',monospace; font-size:17px; font-weight:500; line-height:1.2;}
+  .seg-label{font-size:11px; opacity:.92; white-space:nowrap;}
+  .pipeline-empty{
+    display:flex; align-items:center; justify-content:center; width:100%;
+    color:var(--text-faint); font-size:13px;
+  }
+
+  /* ---- Kanban ---- */
+  .kanban{
+    display:grid; grid-template-columns:repeat(auto-fit, minmax(170px,1fr)); gap:12px;
+    margin-bottom:28px;
+  }
+  .kanban-column{
+    background:var(--surface); border:1px solid var(--border); border-radius:10px;
+    display:flex; flex-direction:column; min-height:90px;
+  }
+  .kanban-header{
+    display:flex; justify-content:space-between; align-items:center;
+    padding:10px 12px; border-top:4px solid var(--text-faint); border-radius:10px 10px 0 0;
+  }
+  .kanban-title{font-size:13px; font-weight:600;}
+  .kanban-count{
+    font-family:'IBM Plex Mono',monospace; font-size:13px; color:var(--text-muted);
+    background:var(--bg); padding:2px 8px; border-radius:999px;
+  }
+  .kanban-body{padding:8px; display:flex; flex-direction:column; gap:8px; max-height:340px; overflow-y:auto;}
+  .kanban-empty{font-size:12px; color:var(--text-faint); padding:8px 4px;}
+
+  .repo-card{
+    position:relative; background:var(--bg); border-radius:8px; padding:8px 30px 8px 10px;
+  }
+  .repo-name{font-family:'IBM Plex Mono',monospace; font-size:12.5px; font-weight:500; word-break:break-word;}
+  .repo-meta{display:flex; gap:8px; flex-wrap:wrap; margin-top:4px; font-size:11px; color:var(--text-muted);}
+  .health-dot{
+    position:absolute; top:10px; right:10px; width:9px; height:9px; border-radius:50%;
+  }
+
+  /* ---- Health section ---- */
+  .health-section h3{font-size:15px; margin-bottom:10px;}
+  .health-pills{display:flex; gap:10px; flex-wrap:wrap; margin-bottom:16px;}
+  .health-pill{
+    display:flex; align-items:center; gap:8px; background:var(--surface);
+    border:1px solid var(--border); border-radius:999px; padding:8px 14px; font-size:13px;
+  }
+  .health-pill .dot{width:10px; height:10px; border-radius:50%;}
+  .health-pill .pill-count{font-family:'IBM Plex Mono',monospace; font-weight:500;}
+
+  .attention-list h4{font-size:13px; color:var(--text-muted); margin-bottom:8px;}
+  .attention-empty{font-size:13px; color:var(--text-faint);}
+  .attention-item{
+    display:flex; gap:14px; flex-wrap:wrap; align-items:center;
+    background:var(--surface); border:1px solid var(--border); border-left:4px solid var(--text-faint);
+    border-radius:8px; padding:10px 14px; margin-bottom:8px; font-size:13px;
+  }
+  .attention-item .repo-name{flex:1 1 160px;}
+  .attention-item.health-at-risk{border-left-color:var(--h-atrisk);}
+  .attention-item.health-blocked{border-left-color:var(--h-blocked);}
+  .attention-phase{color:var(--text-muted); font-size:12px;}
+  .attention-health{
+    font-family:'IBM Plex Mono',monospace; font-size:11px; font-weight:500;
+    padding:2px 8px; border-radius:999px; color:#fff;
+  }
+  .attention-item.health-at-risk .attention-health{background:var(--h-atrisk);}
+  .attention-item.health-blocked .attention-health{background:var(--h-blocked);}
+  .attention-owner{color:var(--text-muted); font-size:12px; margin-left:auto;}
+
+  /* ---- Guide tab ---- */
+  .guide-section{margin-bottom:24px;}
+  .guide-section h2{font-size:17px; margin-bottom:8px;}
+  .guide-section p{color:var(--text-muted); margin:0 0 10px;}
+  table.guide-table{
+    width:100%; border-collapse:collapse; background:var(--surface);
+    border:1px solid var(--border); border-radius:8px; overflow:hidden; font-size:13px;
+  }
+  table.guide-table th, table.guide-table td{
+    text-align:left; padding:10px 12px; border-bottom:1px solid var(--border);
+  }
+  table.guide-table th{background:var(--bg); font-weight:600;}
+  table.guide-table tr:last-child td{border-bottom:none;}
+  .pill-inline{
+    font-family:'IBM Plex Mono',monospace; font-size:11px; background:var(--bg);
+    padding:2px 6px; border-radius:4px;
+  }
+
+  @media print{
+    .topbar .actions, .tabs, .status-bar a{display:none;}
+    .tab-panel{display:block !important;}
+    body{font-size:12px;}
+  }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-mark">GHEC</span>
+    <div>
+      <h1>Migration command center</h1>
+      <p class="subtitle">GHES &rarr; GHEC repository migration tracker</p>
+    </div>
+  </div>
+  <div class="actions">
+    <button id="downloadTemplateBtn" class="btn btn-ghost">Download CSV template</button>
+    <label class="btn btn-primary" for="csvUpload">Upload CSV</label>
+    <input type="file" id="csvUpload" accept=".csv" hidden>
+  </div>
+</header>
+
+<div class="status-bar" id="statusBar">
+  Showing sample data &mdash; upload your CSV to replace it, or
+  <a id="loadSampleLink">reload the sample</a>.
+</div>
+
+<div class="overall">
+  <div class="overall-label">Overall progress &mdash; <span class="mono" id="overallTotal"></span> repositories tracked</div>
+  <div class="pipeline" id="overallPipeline"></div>
+</div>
+
+<nav class="tabs">
+  <button class="tab active" data-tab="daily">Daily dashboard</button>
+  <button class="tab" data-tab="monthly">Monthly dashboard</button>
+  <button class="tab" data-tab="guide">CSV format guide</button>
+</nav>
+
+<main>
+  <section id="daily" class="tab-panel active">
+    <div class="panel-controls">
+      <label for="dateSelect">Date</label>
+      <select id="dateSelect"></select>
+      <div class="repo-count" id="dailyTotal"></div>
+    </div>
+    <div class="pipeline" id="dailyPipeline"></div>
+    <div class="kanban" id="dailyKanban"></div>
+    <div class="health-section">
+      <h3>Status</h3>
+      <div class="health-pills" id="healthPills"></div>
+      <div class="attention-list" id="attentionList"></div>
+    </div>
+  </section>
+
+  <section id="monthly" class="tab-panel">
+    <div class="panel-controls">
+      <label for="monthSelect">Month</label>
+      <select id="monthSelect"></select>
+      <div class="repo-count" id="monthlyTotal"></div>
+    </div>
+    <div class="pipeline" id="monthlyPipeline"></div>
+    <div class="kanban" id="monthlyKanban"></div>
+  </section>
+
+  <section id="guide" class="tab-panel">
+    <div class="guide-section">
+      <h2>How this works</h2>
+      <p>
+        Keep one row per repository in a spreadsheet (Excel, Google Sheets, etc.), export it as a CSV,
+        and upload it above. The dashboard groups repos by migration phase for the Daily view, and
+        rolls those phases up into Scheduled / In Progress / Complete for the Monthly view &mdash;
+        automatically, based on the table below.
+      </p>
+      <p>Click <strong>Download CSV template</strong> for a ready-to-edit starting file with the columns already set up.</p>
+    </div>
+
+    <div class="guide-section">
+      <h2>Columns</h2>
+      <table class="guide-table">
+        <tr><th>Column</th><th>Required</th><th>Accepted values</th><th>Notes</th></tr>
+        <tr>
+          <td class="mono">repo_name</td><td>Yes</td><td>Any text</td>
+          <td>Name of the repository being migrated.</td>
+        </tr>
+        <tr>
+          <td class="mono">migration_phase</td><td>Yes</td>
+          <td>
+            <span class="pill-inline">Preparation</span>
+            <span class="pill-inline">In Progress</span>
+            <span class="pill-inline">Complete</span>
+            <span class="pill-inline">Post-Migration</span>
+            <span class="pill-inline">Validation</span>
+          </td>
+          <td>Drives the Daily dashboard columns.</td>
+        </tr>
+        <tr>
+          <td class="mono">health_status</td><td>Optional</td>
+          <td>
+            <span class="pill-inline">On Track</span>
+            <span class="pill-inline">At Risk</span>
+            <span class="pill-inline">Blocked</span>
+            <span class="pill-inline">Done</span>
+          </td>
+          <td>Shown in the "Status" section. Defaults to On Track if left blank.</td>
+        </tr>
+        <tr>
+          <td class="mono">target_date</td><td>Optional</td><td>YYYY-MM-DD</td>
+          <td>Drives the Date picker and Monthly grouping. Defaults to today if left blank.</td>
+        </tr>
+        <tr>
+          <td class="mono">wave</td><td>Optional</td><td>Any text</td>
+          <td>e.g. "Wave 1" &mdash; shown on each repo card.</td>
+        </tr>
+        <tr>
+          <td class="mono">owner</td><td>Optional</td><td>Any text</td>
+          <td>Who's responsible for this repo's migration.</td>
+        </tr>
+      </table>
+    </div>
+
+    <div class="guide-section">
+      <h2>How the Monthly rollup is calculated</h2>
+      <p>The Monthly dashboard's three columns are derived automatically from <span class="mono">migration_phase</span>:</p>
+      <table class="guide-table">
+        <tr><th>Daily phase</th><th>Monthly column</th></tr>
+        <tr><td>Preparation</td><td>Scheduled</td></tr>
+        <tr><td>In Progress, Post-Migration, Validation</td><td>In Progress</td></tr>
+        <tr><td>Complete</td><td>Complete</td></tr>
+      </table>
+    </div>
+
+    <div class="guide-section">
+      <h2>Tips</h2>
+      <p>
+        Column names are matched flexibly &mdash; "Repo Name", "repo_name" and "Repository" all work, as
+        do "Status", "Health" and "RAG" for health status. If a required column can't be found, the
+        dashboard will leave your current data in place and let you know.
+      </p>
+    </div>
+  </section>
+</main>
+
+<script>
+  const PHASE_ORDER = ['Preparation','In Progress','Complete','Post-Migration','Validation'];
+  const PHASE_COLOR_VAR = {
+    'Preparation':'--c-preparation', 'In Progress':'--c-inprogress', 'Complete':'--c-complete',
+    'Post-Migration':'--c-postmigration', 'Validation':'--c-validation'
+  };
+  const ROLLUP_ORDER = ['Scheduled','In Progress','Complete'];
+  const ROLLUP_COLOR_VAR = {
+    'Scheduled':'--r-scheduled', 'In Progress':'--r-inprogress', 'Complete':'--r-complete'
+  };
+  const PHASE_TO_ROLLUP = {
+    'Preparation':'Scheduled', 'In Progress':'In Progress', 'Post-Migration':'In Progress',
+    'Validation':'In Progress', 'Complete':'Complete'
+  };
+  const HEALTH_ORDER = ['On Track','At Risk','Blocked','Done'];
+  const HEALTH_COLOR_VAR = {
+    'On Track':'--h-ontrack', 'At Risk':'--h-atrisk', 'Blocked':'--h-blocked', 'Done':'--h-done'
+  };
+  const HEADER_ALIASES = {
+    repo:   ['repo','repository','reponame','reponame*','name','repositoryname'],
+    owner:  ['owner','lead','contact','assignee'],
+    wave:   ['wave','batch','group','migrationwave'],
+    date:   ['targetdate','date','migrationdate','scheduleddate'],
+    phase:  ['migrationphase','phase'],
+    health: ['healthstatus','health','status','rag','risk','riskstatus']
+  };
+
+  const SAMPLE_CSV =
+`repo_name,owner,wave,target_date,migration_phase,health_status
+payments-api,Asha Patel,Wave 1,2026-06-17,Preparation,On Track
+user-service,Asha Patel,Wave 1,2026-06-17,In Progress,On Track
+frontend-web,Marco Diaz,Wave 1,2026-06-17,Complete,Done
+inventory-service,Marco Diaz,Wave 1,2026-06-18,In Progress,At Risk
+search-api,Priya Nair,Wave 1,2026-06-18,Preparation,On Track
+notifications,Priya Nair,Wave 1,2026-06-18,Validation,On Track
+billing-portal,Tom Lee,Wave 1,2026-06-19,Post-Migration,Blocked
+reporting-svc,Tom Lee,Wave 1,2026-06-19,Complete,Done
+auth-gateway,Asha Patel,Wave 2,2026-07-08,Preparation,On Track
+data-pipeline,Marco Diaz,Wave 2,2026-07-08,Preparation,At Risk
+legacy-billing,Priya Nair,Wave 2,2026-07-15,Preparation,On Track
+mobile-bff,Tom Lee,Wave 2,2026-07-15,Preparation,On Track
+analytics-warehouse,Asha Patel,Wave 2,2026-07-22,Preparation,On Track`;
+
+  let dataset = [];
+
+  function escapeHtml(str){
+    const div = document.createElement('div');
+    div.textContent = str == null ? '' : String(str);
+    return div.innerHTML;
+  }
+
+  function normalizeHeader(h){
+    return h.toLowerCase().replace(/[\s_-]+/g,'');
+  }
+
+  function buildFieldMap(headers){
+    const map = {};
+    headers.forEach(h => {
+      const norm = normalizeHeader(h);
+      Object.entries(HEADER_ALIASES).forEach(([field, aliases]) => {
+        if (!(field in map) && aliases.includes(norm)) map[field] = h;
+      });
+    });
+    return map;
+  }
+
+  function normalizePhase(raw){
+    const s = (raw||'').toLowerCase().replace(/[\s_-]+/g,'');
+    if (s.includes('prep')) return 'Preparation';
+    if (s.includes('postmig')) return 'Post-Migration';
+    if (s.includes('valid')) return 'Validation';
+    if (s.includes('progress')) return 'In Progress';
+    if (s.includes('complet') || s.includes('done')) return 'Complete';
+    return 'Preparation';
+  }
+
+  function normalizeHealth(raw){
+    const s = (raw||'').toLowerCase().replace(/[\s_-]+/g,'');
+    if (!s) return 'On Track';
+    if (s.includes('block') || s.includes('red')) return 'Blocked';
+    if (s.includes('risk') || s.includes('amber') || s.includes('yellow')) return 'At Risk';
+    if (s.includes('done') || s.includes('complet') || s.includes('closed')) return 'Done';
+    return 'On Track';
+  }
+
+  function parseDate(raw){
+    if (!raw) return null;
+    const d = new Date(raw);
+    return isNaN(d.getTime()) ? null : d;
+  }
+
+  function dateKeyOf(d){ return d.toISOString().slice(0,10); }
+
+  function formatDateDisplay(d){
+    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    return `${months[d.getUTCMonth()]} ${d.getUTCDate()}, ${d.getUTCFullYear()}`;
+  }
+
+  function monthLabelOf(d){
+    const months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+    return `${months[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
+  }
+
+  function monthKeyOf(d){
+    return `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}`;
+  }
+
+  function processRows(rows, fieldMap){
+    return rows
+      .map(row => {
+        const repo = fieldMap.repo ? (row[fieldMap.repo]||'').trim() : '';
+        if (!repo) return null;
+        const date = (fieldMap.date && parseDate(row[fieldMap.date])) || new Date();
+        const phase = normalizePhase(fieldMap.phase ? row[fieldMap.phase] : '');
+        return {
+          repo,
+          owner: fieldMap.owner ? (row[fieldMap.owner]||'').trim() : '',
+          wave: fieldMap.wave ? (row[fieldMap.wave]||'').trim() : '',
+          date,
+          dateKey: dateKeyOf(date),
+          monthKey: monthKeyOf(date),
+          monthLabel: monthLabelOf(date),
+          phase,
+          rollup: PHASE_TO_ROLLUP[phase],
+          health: normalizeHealth(fieldMap.health ? row[fieldMap.health] : '')
+        };
+      })
+      .filter(Boolean);
+  }
+
+  function loadCSVText(text, label){
+    Papa.parse(text, {
+      header: true,
+      skipEmptyLines: true,
+      complete: function(results){
+        const fieldMap = buildFieldMap(results.meta.fields || []);
+        if (!fieldMap.repo || !fieldMap.phase){
+          alert('That CSV is missing a repo name or migration phase column. Check the "CSV format guide" tab for the expected columns — your current data has not been changed.');
+          return;
+        }
+        const rows = processRows(results.data, fieldMap);
+        if (rows.length === 0){
+          alert('No usable rows were found in that CSV. Your current data has not been changed.');
+          return;
+        }
+        dataset = rows;
+        document.getElementById('statusBar').innerHTML =
+          `Showing ${escapeHtml(label)} (${dataset.length} repositories) &mdash; <a id="loadSampleLink">reload the sample</a>`;
+        document.getElementById('loadSampleLink').addEventListener('click', loadSample);
+        populateSelectors();
+        renderOverall();
+        renderDaily();
+        renderMonthly();
+      }
+    });
+  }
+
+  function loadSample(){
+    loadCSVText(SAMPLE_CSV, 'sample data');
+  }
+
+  function renderPipeline(container, counts, order, colorVarMap, total){
+    container.innerHTML = '';
+    if (total === 0){
+      container.innerHTML = '<div class="pipeline-empty">No repositories for this selection</div>';
+      return;
+    }
+    order.forEach(key => {
+      const count = counts[key] || 0;
+      if (count === 0) return;
+      const seg = document.createElement('div');
+      seg.className = 'pipeline-segment';
+      seg.style.flexGrow = count;
+      seg.style.background = `var(${colorVarMap[key]})`;
+      seg.innerHTML = `<span class="seg-count">${count}</span><span class="seg-label">${key}</span>`;
+      container.appendChild(seg);
+    });
+  }
+
+  function renderRepoCard(item){
+    const meta = [item.wave, item.owner].filter(Boolean).map(escapeHtml).join(' &middot; ');
+    return `
+      <div class="repo-card">
+        <div class="repo-name">${escapeHtml(item.repo)}</div>
+        ${meta ? `<div class="repo-meta">${meta}</div>` : ''}
+        <div class="health-dot" style="background:var(${HEALTH_COLOR_VAR[item.health]})" title="${item.health}"></div>
+      </div>
+    `;
+  }
+
+  function renderKanban(container, items, order, colorVarMap, groupField){
+    container.innerHTML = '';
+    order.forEach(key => {
+      const colItems = items.filter(i => i[groupField] === key);
+      const col = document.createElement('div');
+      col.className = 'kanban-column';
+      col.innerHTML = `
+        <div class="kanban-header" style="border-top-color:var(${colorVarMap[key]})">
+          <span class="kanban-title">${key}</span>
+          <span class="kanban-count">${colItems.length}</span>
+        </div>
+        <div class="kanban-body">
+          ${colItems.length ? colItems.map(renderRepoCard).join('') : '<div class="kanban-empty">No repositories</div>'}
+        </div>
+      `;
+      container.appendChild(col);
+    });
+  }
+
+  function renderHealth(items){
+    const counts = {};
+    HEALTH_ORDER.forEach(h => counts[h] = 0);
+    items.forEach(i => counts[i.health]++);
+
+    document.getElementById('healthPills').innerHTML = HEALTH_ORDER.map(h => `
+      <div class="health-pill">
+        <span class="dot" style="background:var(${HEALTH_COLOR_VAR[h]})"></span>
+        <span>${h}</span>
+        <span class="pill-count">${counts[h]}</span>
+      </div>
+    `).join('');
+
+    const attention = items.filter(i => i.health === 'At Risk' || i.health === 'Blocked');
+    const el = document.getElementById('attentionList');
+    if (attention.length === 0){
+      el.innerHTML = '<div class="attention-empty">Nothing flagged for this date &mdash; all repositories are on track or done.</div>';
+      return;
+    }
+    const cls = h => 'health-' + h.replace(/\s+/g,'-').toLowerCase();
+    el.innerHTML = '<h4>Needs attention</h4>' + attention.map(i => `
+      <div class="attention-item ${cls(i.health)}">
+        <span class="repo-name">${escapeHtml(i.repo)}</span>
+        <span class="attention-phase">${i.phase}</span>
+        <span class="attention-health">${i.health}</span>
+        ${i.owner ? `<span class="attention-owner">${escapeHtml(i.owner)}</span>` : ''}
+      </div>
+    `).join('');
+  }
+
+  function populateSelectors(){
+    const dateKeys = [...new Set(dataset.map(d => d.dateKey))].sort();
+    const dateSelect = document.getElementById('dateSelect');
+    dateSelect.innerHTML = dateKeys.map(dk => {
+      const d = dataset.find(x => x.dateKey === dk).date;
+      return `<option value="${dk}">${formatDateDisplay(d)}</option>`;
+    }).join('');
+
+    const monthKeys = [...new Set(dataset.map(d => d.monthKey))].sort();
+    const monthSelect = document.getElementById('monthSelect');
+    monthSelect.innerHTML = monthKeys.map(mk => {
+      const d = dataset.find(x => x.monthKey === mk);
+      return `<option value="${mk}">${d.monthLabel}</option>`;
+    }).join('');
+  }
+
+  function renderOverall(){
+    document.getElementById('overallTotal').textContent = dataset.length;
+    const counts = {};
+    ROLLUP_ORDER.forEach(p => counts[p] = 0);
+    dataset.forEach(i => counts[i.rollup]++);
+    renderPipeline(document.getElementById('overallPipeline'), counts, ROLLUP_ORDER, ROLLUP_COLOR_VAR, dataset.length);
+  }
+
+  function renderDaily(){
+    const dk = document.getElementById('dateSelect').value;
+    const items = dataset.filter(d => d.dateKey === dk);
+    document.getElementById('dailyTotal').textContent = `${items.length} repositories`;
+    const counts = {};
+    PHASE_ORDER.forEach(p => counts[p] = 0);
+    items.forEach(i => counts[i.phase]++);
+    renderPipeline(document.getElementById('dailyPipeline'), counts, PHASE_ORDER, PHASE_COLOR_VAR, items.length);
+    renderKanban(document.getElementById('dailyKanban'), items, PHASE_ORDER, PHASE_COLOR_VAR, 'phase');
+    renderHealth(items);
+  }
+
+  function renderMonthly(){
+    const mk = document.getElementById('monthSelect').value;
+    const items = dataset.filter(d => d.monthKey === mk);
+    document.getElementById('monthlyTotal').textContent = `${items.length} repositories`;
+    const counts = {};
+    ROLLUP_ORDER.forEach(p => counts[p] = 0);
+    items.forEach(i => counts[i.rollup]++);
+    renderPipeline(document.getElementById('monthlyPipeline'), counts, ROLLUP_ORDER, ROLLUP_COLOR_VAR, items.length);
+    renderKanban(document.getElementById('monthlyKanban'), items, ROLLUP_ORDER, ROLLUP_COLOR_VAR, 'rollup');
+  }
+
+  // ---- Wiring ----
+  document.querySelectorAll('.tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+      tab.classList.add('active');
+      document.getElementById(tab.dataset.tab).classList.add('active');
+    });
+  });
+
+  document.getElementById('dateSelect').addEventListener('change', renderDaily);
+  document.getElementById('monthSelect').addEventListener('change', renderMonthly);
+  document.getElementById('loadSampleLink').addEventListener('click', loadSample);
+
+  document.getElementById('csvUpload').addEventListener('change', function(e){
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => loadCSVText(ev.target.result, file.name);
+    reader.readAsText(file);
+  });
+
+  document.getElementById('downloadTemplateBtn').addEventListener('click', () => {
+    const blob = new Blob([SAMPLE_CSV], {type:'text/csv'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'migration-dashboard-template.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+  });
+
+  // Initial load
+  loadSample();
+</script>
+</body>
+</html>
